@@ -1,6 +1,6 @@
 # Teepresso Clone — Batch Photo T-Shirt Platform 🎓👕
 
-A graduation and batch apparel platform built with **Next.js 14**, **Tailwind CSS**, and **TypeScript**, specifically designed for effortless deployment on **Netlify** and **Vercel** with custom subdomains.
+A graduation and batch apparel platform built with **Next.js 14**, **Tailwind CSS**, and **TypeScript**, specifically designed for effortless 1-click deployment on **Vercel** with custom subdomains.
 
 ---
 
@@ -10,7 +10,7 @@ A graduation and batch apparel platform built with **Next.js 14**, **Tailwind CS
    - Hero section with dual-view T-Shirt Mockup (Front collage + Back jersey print).
    - Real-time layout switcher (`Square`, `Honeycomb`, `Chain`).
    - Dynamic batch progress counter pill and friends-joined indicators.
-   - Interactive pricing packages (`Basic ₹130`, `Salina ₹150`, `Top ₹200`) with a class-size slider.
+   - Interactive pricing packages (`Basic ₹150`, `Salina ₹150`, `Top ₹200`) with a class-size slider.
    - Step-by-step workflow guide and FAQ accordion.
    - Floating WhatsApp support button.
 
@@ -32,7 +32,7 @@ A graduation and batch apparel platform built with **Next.js 14**, **Tailwind CS
 
 4. **Student Join Flow (`/join/[batchId]`)**:
    - Mobile-first, friction-free interface designed for students clicking WhatsApp links.
-   - Photo upload with file magic byte inspection and 5MB size limit.
+   - Photo upload or sample portrait picker.
    - Jersey name & roll number customization with interactive size chart guide.
    - Live personal mockup preview of their name & face on the shirt.
    - Celebratory confetti explosion upon submission.
@@ -72,9 +72,37 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## 🌐 How to Deploy to Vercel (Step-by-Step)
 
 ### Option A: Via GitHub (Recommended)
-1. Push this folder to a new GitHub repository.
+1. Push this folder to a new GitHub repository:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit of Batch Apparel Platform"
+   git remote add origin https://github.com/your-username/your-repo-name.git
+   git push -u origin main
+   ```
 2. Go to [https://vercel.com](https://vercel.com) and log in.
 3. Click **"Add New..."** → **"Project"**.
 4. Import your GitHub repository.
 5. Keep default settings (Framework preset: Next.js) and click **"Deploy"**.
 6. Your website is live in ~60 seconds!
+
+---
+
+## 🔗 How to Configure a Subdomain on Vercel
+
+### 1. Free Vercel Subdomain (e.g. `yourbrand.vercel.app`)
+- In your Vercel Project Dashboard:
+  - Go to **Settings** → **Domains**.
+  - Edit the default domain to whatever name you want (e.g. `teepresso-india.vercel.app` or `mycollegebatch.vercel.app`).
+  - It becomes active immediately with free automatic SSL!
+
+### 2. Custom Subdomain (e.g. `app.yourdomain.com` or `tees.yourcollege.com`)
+- In your Vercel Project Dashboard:
+  - Go to **Settings** → **Domains**.
+  - Type your subdomain (e.g., `batch.yourbrand.com`) and click **Add**.
+  - Vercel will show you the DNS record to add:
+    - **Type**: `CNAME`
+    - **Name**: `batch` (or your subdomain prefix)
+    - **Value**: `cname.vercel-dns.com`
+  - Add this `CNAME` record in your domain registrar (GoDaddy, Namecheap, Cloudflare, Hostinger, etc.).
+  - Within 2-10 minutes, Vercel will verify the record and automatically provision an SSL certificate!

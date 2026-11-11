@@ -1,27 +1,37 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
-    './pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
-        primary: {
-          DEFAULT: '#ff5722',
-          hover: '#f4511e',
+        cream: {
+          50: '#FDFBF7',
+          100: '#FAF7F2',
+          200: '#F3ECE1',
+          300: '#E6DCC9',
+          400: '#D5C4AC',
+          DEFAULT: '#FAF7F2',
         },
+        brand: {
+          dark: '#1A1613',
+          card: '#FFFFFF',
+          border: '#E8E2D8',
+          accent: '#D9531E',
+          accentHover: '#BF4314',
+          subtle: '#6B665F',
+          amber: '#F59E0B',
+        }
       },
       fontFamily: {
-        sans: ['var(--font-geist-sans)', 'sans-serif'],
-        mono: ['var(--font-geist-mono)', 'monospace'],
-        display: ['var(--font-cinzel)', 'serif'],
-        heading: ['var(--font-outfit)', 'sans-serif'],
-      },
+        serif: ['Instrument Serif', 'Georgia', 'serif'],
+        sans: ['DM Sans', 'Inter', 'system-ui', 'sans-serif'],
+      }
     },
   },
   plugins: [],
-};
+}
