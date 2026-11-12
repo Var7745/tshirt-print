@@ -1,0 +1,23 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22.13.0"
+  NODE_OPTIONS = "--experimental-sqlite"
+  NPM_FLAGS = "--legacy-peer-deps"
+
+[context.production.environment]
+  NODE_VERSION = "22.13.0"
+  NODE_OPTIONS = "--experimental-sqlite"
+
+[context.deploy-preview.environment]
+  NODE_VERSION = "22.13.0"
+  NODE_OPTIONS = "--experimental-sqlite"
+
+[context.branch-deploy.environment]
+  NODE_VERSION = "22.13.0"
+  NODE_OPTIONS = "--experimental-sqlite"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
