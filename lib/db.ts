@@ -1,22 +1,25 @@
 import type { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { hashPassword } from './auth';
 
-const SAMPLE_AVATARS = [
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-];
+let _supabase: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient | null {
+  if (_supabase) return _supabase;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (url && key) {
+    _supabase = createClient(url, key, {
+      auth: { persistSession: false },
+    });
+    return _supabase;
+  }
+  return null;
+}
+
+const SAMPLE_AVATARS: string[] = [];
 
 const isServerless = Boolean(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL);
 const DB_DIR = isServerless ? '/tmp' : path.resolve(process.cwd(), 'data');
@@ -59,26 +62,18 @@ function loadDatabaseConstructor(): any {
   }
 }
 
-// Fallback stub database for build-time static evaluation or unsupported environments
-function createStubDb(): any {
-  const stubStatement = {
-    get: () => null,
-    all: () => [],
-    run: () => ({ changes: 0, lastInsertRowid: 0 }),
-  };
-  return {
-    exec: () => {},
-    prepare: () => stubStatement,
-  };
-}
-
 export function getDb(): DatabaseSync {
   if (!_db) {
     ensureDbFile();
     const DBConstructor = loadDatabaseConstructor();
     if (!DBConstructor) {
-      console.warn('Native node:sqlite is unavailable in current runtime. Using safe stub database.');
-      return createStubDb();
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'FATAL DATABASE ERROR: Native SQLite (node:sqlite) engine could not be initialized in production. ' +
+          'Ensure Node.js is >= 22.13.0 or configure Supabase credentials (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY).'
+        );
+      }
+      throw new Error('Database initialization failed: SQLite (node:sqlite) is not available in current runtime.');
     }
     _db = new DBConstructor(DB_FILE);
     // Enable WAL mode for high concurrency
@@ -112,6 +107,7 @@ function initSchema(db: DatabaseSync) {
       phone TEXT NOT NULL,
       whatsapp TEXT,
       email TEXT,
+      password_hash TEXT,
       college_name TEXT,
       department TEXT,
       batch TEXT,
@@ -158,6 +154,8 @@ function initSchema(db: DatabaseSync) {
       delivery_status TEXT DEFAULT 'packing_pending',
       special_instructions TEXT,
       back_template TEXT DEFAULT 'jersey',
+      idempotency_key TEXT,
+      invite_token TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -418,8 +416,47 @@ function initSchema(db: DatabaseSync) {
     );
   `);
 
+  runSchemaMigrations(db);
   seedInitialData(db);
   migratePlaintextPasswords(db);
+}
+
+function runSchemaMigrations(db: DatabaseSync) {
+  try {
+    db.exec('ALTER TABLE orders ADD COLUMN idempotency_key TEXT;');
+  } catch {
+    // Column already exists
+  }
+  try {
+    db.exec('ALTER TABLE customers ADD COLUMN password_hash TEXT;');
+  } catch {
+    // Column already exists
+  }
+  try {
+    db.exec('ALTER TABLE orders ADD COLUMN invite_token TEXT;');
+  } catch {
+    // Column already exists
+  }
+
+  // Purge any mock/fake/demo data from previous runs
+  try {
+    db.exec(`
+      DELETE FROM individual_tshirts WHERE order_id LIKE 'JK-2026-%' OR order_id LIKE 'demo%';
+      DELETE FROM design_files WHERE order_id LIKE 'JK-2026-%' OR order_id LIKE 'demo%';
+      DELETE FROM production_records WHERE order_id LIKE 'JK-2026-%' OR order_id LIKE 'demo%';
+      DELETE FROM payments WHERE order_id LIKE 'JK-2026-%' OR order_id LIKE 'demo%';
+      DELETE FROM shipping_records WHERE order_id LIKE 'JK-2026-%' OR order_id LIKE 'demo%';
+      DELETE FROM orders WHERE id LIKE 'JK-2026-%' OR id LIKE 'demo%';
+      DELETE FROM customers WHERE id LIKE 'cust_%' OR email LIKE '%@akps.edu.in' OR email LIKE '%@loyola.edu' OR email LIKE '%@srmist.edu.in';
+      DELETE FROM enquiries WHERE id LIKE 'enq_%';
+      DELETE FROM reviews WHERE id LIKE 'rev_%';
+      DELETE FROM notifications WHERE id LIKE 'notif_%';
+      DELETE FROM activity_logs WHERE details LIKE '%seed%' OR entity_id LIKE 'JK-2026-%';
+      DELETE FROM admin_users WHERE id = 'usr_superadmin' OR email = 'admin@jkempress.com';
+    `);
+  } catch {
+    // Clean-up non-critical
+  }
 }
 
 function migratePlaintextPasswords(db: DatabaseSync) {
@@ -437,32 +474,36 @@ function migratePlaintextPasswords(db: DatabaseSync) {
 }
 
 function seedInitialData(db: DatabaseSync) {
-  // Check if admin already exists
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM admin_users').get() as { count: number };
-  if (countRow && countRow.count > 0) {
-    return; // Already seeded
-  }
-
   const now = new Date().toISOString();
 
-  // 1. Seed Primary Admin User
-  const insertAdmin = db.prepare(`
-    INSERT INTO admin_users (id, email, password_hash, name, role, phone, avatar_url, status, created_at, last_login_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  // 1. Seed or Update Primary Admin User 'jagan'
+  const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || '24K95A0412';
+  const hashedAdminPassword = hashPassword(adminPassword);
 
-  insertAdmin.run(
-    'usr_superadmin',
-    'admin@jkempress.com',
-    hashPassword('12345678'), // Master Admin credentials hashed with scrypt
-    'JK Empress Admin',
-    'Admin',
-    '+91 98490 12345',
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    'active',
-    now,
-    now
-  );
+  const existingAdmin = db.prepare('SELECT id FROM admin_users WHERE id = ? OR email = ? OR name = ?').get('jagan', 'jagan@jkempress.com', 'jagan');
+  if (!existingAdmin) {
+    db.prepare(`
+      INSERT INTO admin_users (id, email, password_hash, name, role, phone, avatar_url, status, created_at, last_login_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'jagan',
+      'jagan@jkempress.com',
+      hashedAdminPassword,
+      'jagan',
+      'Super Admin',
+      '+91 98490 12345',
+      null,
+      'active',
+      now,
+      now
+    );
+  } else {
+    db.prepare(`
+      UPDATE admin_users
+      SET password_hash = ?, name = 'jagan', role = 'Super Admin', status = 'active'
+      WHERE id = 'jagan' OR email = 'jagan@jkempress.com' OR name = 'jagan'
+    `).run(hashedAdminPassword);
+  }
 
   // 2. Seed Settings
   const insertSetting = db.prepare('INSERT OR REPLACE INTO business_settings (key, value, updated_at) VALUES (?, ?, ?)');
@@ -595,704 +636,14 @@ function seedInitialData(db: DatabaseSync) {
     insertInventory.run(item[0], item[1], item[2], item[3], item[4], item[5], item[6], item[7], item[8], item[9], item[10], now);
   }
 
-  // 5. Seed Customers & Bulk Orders
-  const insertCustomer = db.prepare(`
-    INSERT INTO customers (id, name, phone, whatsapp, email, college_name, department, batch, billing_address, delivery_address, total_orders, total_spent, notes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertOrder = db.prepare(`
-    INSERT INTO orders (
-      id, customer_id, customer_name, phone, whatsapp, email, college_name, department, batch,
-      billing_address, delivery_address, event_name, event_category, event_date, delivery_required_date,
-      participants_count, tshirts_count, collage_shape, pack_name, price_per_tshirt,
-      printing_charges, customization_charges, shipping_charges, discount_amount, gst_amount,
-      total_amount, advance_amount, remaining_amount, payment_status, production_status,
-      delivery_status, special_instructions, back_template, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertShirt = db.prepare(`
-    INSERT INTO individual_tshirts (
-      id, order_id, tshirt_number, person_name, jersey_name, roll_number, size,
-      colour, fabric, sleeve_type, main_photo_url, additional_photos, custom_text,
-      signature_image_url, special_instructions, print_front, print_back, print_left_sleeve, print_right_sleeve,
-      unique_photos_count, required_print_copies, production_status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertDesign = db.prepare(`
-    INSERT INTO design_files (
-      id, order_id, tshirt_id, side, artwork_url, mockup_url, print_width_in, print_height_in, dpi, format, status, approval_notes, approved_by, approved_at, version, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertProduction = db.prepare(`
-    INSERT INTO production_records (
-      id, order_id, assigned_staff_id, assigned_staff_name, priority, stage, start_date, expected_date, completed_date, tshirts_completed, tshirts_pending, defective_count, reprint_requests, notes, checklist_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertPayment = db.prepare(`
-    INSERT INTO payments (
-      id, order_id, amount, payment_date, payment_method, transaction_ref, status, invoice_number, notes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertShipping = db.prepare(`
-    INSERT INTO shipping_records (
-      id, order_id, customer_name, delivery_address, packages_count, total_tshirts, courier_name, tracking_number, shipment_date, expected_delivery_date, actual_delivery_date, status, delivery_notes, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  // --- ORDER 1: JK-2026-0001 (Signature Day, 60 shirts, In Production) ---
-  insertCustomer.run(
-    'cust_001',
-    'Praveen Kumar',
-    '+91 98765 01001',
-    '+91 98765 01001',
-    'praveen.ece@akps.edu.in',
-    'A K P S GOVT JR College',
-    'ECE - Section B',
-    '2023 - 2027',
-    'ECE Dept, A K P S College Campus, Tanuku, West Godavari, Andhra Pradesh 534211',
-    'ECE Dept, A K P S College Campus, Tanuku, West Godavari, Andhra Pradesh 534211',
-    1,
-    9000,
-    'Class Representative. Requested delivery 2 days before farewell.',
-    '2026-10-01T10:00:00Z'
-  );
-
-  insertOrder.run(
-    'JK-2026-0001',
-    'cust_001',
-    'Praveen Kumar',
-    '+91 98765 01001',
-    '+91 98765 01001',
-    'praveen.ece@akps.edu.in',
-    'A K P S GOVT JR College',
-    'ECE - Section B',
-    '2023 - 2027',
-    'ECE Dept, A K P S College Campus, Tanuku, West Godavari, AP 534211',
-    'ECE Dept, A K P S College Campus, Tanuku, West Godavari, AP 534211',
-    'Signature Day 2027',
-    'Signature Day',
-    '2027-03-20',
-    '2027-03-15',
-    60,
-    60,
-    'honeycomb',
-    'salina',
-    150,
-    0,
-    0,
-    0,
-    0,
-    450,
-    9450,
-    5000,
-    4450,
-    'partially_paid',
-    'printing_in_progress',
-    'packing_pending',
-    'Front Honeycomb rosette print with all 60 classmates. Pack includes Black Fabric Markers & Shades.',
-    'jersey',
-    '2026-10-01T10:15:00Z',
-    now
-  );
-
-  // 60 Individual T-shirts for JK-2026-0001
-  const sizesDistribution = ['S', 'M', 'M', 'L', 'L', 'L', 'XL', 'XL', 'XXL', 'M'];
-  const sampleNames = [
-    ['Neha Sharma', 'NEHA', '021'],
-    ['Rahul Verma', 'RAHUL', '045'],
-    ['Ananya Iyer', 'ANANYA', '012'],
-    ['Karthik Raja', 'KARTHIK', '088'],
-    ['Pooja Reddy', 'POOJA', '034'],
-    ['Aditya Sen', 'ADITYA', '076'],
-    ['Divya Nair', 'DIVYA', '019'],
-    ['Siddharth Patel', 'SID', '052'],
-    ['Sneha Kulkarni', 'SNEHA', '063'],
-    ['Vikram Malhotra', 'VIKRAM', '099'],
-    ['Deepika Das', 'DEEPIKA', '015'],
-    ['Rohan Gupta', 'ROHAN', '071'],
-    ['Meera Joshi', 'MEERA', '029'],
-    ['Harish Chander', 'HARISH', '084'],
-    ['Swati Mishra', 'SWATI', '038'],
-    ['Gautam Menon', 'GAUTAM', '057'],
-    ['Shreya Banerjee', 'SHREYA', '008'],
-    ['Arjun Deshmukh', 'ARJUN', '092'],
-    ['Tanvi Bhat', 'TANVI', '041'],
-    ['Naveen Kumar', 'NAVEEN', '066'],
-  ];
-
-  for (let i = 1; i <= 60; i++) {
-    const padded = String(i).padStart(3, '0');
-    const shirtId = `JK-2026-0001-${padded}`;
-    const nameItem = sampleNames[(i - 1) % sampleNames.length];
-    const name = `${nameItem[0]}${i > 20 ? ' (' + i + ')' : ''}`;
-    const jersey = `${nameItem[1]}${i > 20 ? i : ''}`;
-    const roll = String(parseInt(nameItem[2]) + (i > 20 ? i : 0)).padStart(3, '0');
-    const size = sizesDistribution[(i - 1) % sizesDistribution.length];
-    const avatar = SAMPLE_AVATARS[(i - 1) % SAMPLE_AVATARS.length];
-
-    insertShirt.run(
-      shirtId,
-      'JK-2026-0001',
-      padded,
-      name,
-      jersey,
-      roll,
-      size,
-      'White',
-      '100% Bio-Washed Cotton (220 GSM)',
-      'Half Sleeve',
-      avatar,
-      JSON.stringify([avatar]),
-      `ECE - B Batch of 2027`,
-      null,
-      'Ensure high resolution on name and number back print.',
-      1, // front
-      1, // back
-      0, // left sleeve
-      0, // right sleeve
-      60,
-      1,
-      i <= 42 ? 'completed' : 'printing',
-      '2026-10-01T10:30:00Z'
-    );
-
-    // Front & Back Design files for key shirts
-    if (i <= 5) {
-      insertDesign.run(
-        `des_001_${padded}_front`,
-        'JK-2026-0001',
-        shirtId,
-        'front',
-        '/mockups/front_honeycomb.png',
-        '/mockups/tshirt_front_preview.png',
-        10.5,
-        13.0,
-        300,
-        'PNG',
-        'approved',
-        'Honeycomb rosette centered with student avatar.',
-        'Anjali Mehta',
-        '2026-10-03T14:00:00Z',
-        1,
-        '2026-10-02T10:00:00Z',
-        now
-      );
-
-      insertDesign.run(
-        `des_001_${padded}_back`,
-        'JK-2026-0001',
-        shirtId,
-        'back',
-        '/mockups/back_jersey.png',
-        '/mockups/tshirt_back_preview.png',
-        11.0,
-        14.0,
-        300,
-        'PNG',
-        'approved',
-        `Jersey Name: ${jersey}, Roll: ${roll}`,
-        'Anjali Mehta',
-        '2026-10-03T14:00:00Z',
-        1,
-        '2026-10-02T10:00:00Z',
-        now
-      );
-    }
-  }
-
-  // Order 1 Production Record
-  insertProduction.run(
-    'prod_001',
-    'JK-2026-0001',
-    'usr_production',
-    'Suresh Goud',
-    'urgent',
-    'printing_in_progress',
-    '2026-10-04',
-    '2026-10-14',
-    null,
-    42,
-    18,
-    1,
-    0,
-    '42 of 60 t-shirts printed and checked. 18 shirts pending on Printer 2. High print clarity on white cotton.',
-    JSON.stringify([
-      { task: 'Verify fabric quantity and size breakdown (60 pcs)', done: true },
-      { task: 'Pre-treatment applied to cotton blanks', done: true },
-      { task: 'Front Honeycomb artwork DTG print test approved', done: true },
-      { task: 'Back Jersey name & number print in progress', done: true },
-      { task: 'Heat press curing at 165°C for 90 seconds', done: false },
-      { task: 'Quality inspection & packaging with markers and shades', done: false }
-    ]),
-    now
-  );
-
-  // Order 1 Payment
-  insertPayment.run(
-    'pay_001',
-    'JK-2026-0001',
-    5000,
-    '2026-10-01',
-    'UPI',
-    'UPI/26100112345/HDFC',
-    'paid',
-    'INV-JK-2026-0001',
-    'Advance 50%+ payment received via PhonePe UPI',
-    '2026-10-01T10:20:00Z'
-  );
-
-  // Order 1 Shipping placeholder
-  insertShipping.run(
-    'ship_001',
-    'JK-2026-0001',
-    'Praveen Kumar',
-    'ECE Dept, A K P S College Campus, Tanuku, West Godavari, AP 534211',
-    2,
-    60,
-    'BlueDart Express',
-    'BD982736451IN',
-    null,
-    '2026-10-16',
-    null,
-    'packing_pending',
-    'Two heavy carton boxes containing 30 shirts each + 60 markers + 60 retro sunglasses.',
-    now
-  );
-
-  // --- ORDER 2: JK-2026-0002 (IIT Bombay Farewell, 45 shirts, Ready for Delivery) ---
-  insertCustomer.run(
-    'cust_002',
-    'Rohan Kulkarni',
-    '+91 99887 76655',
-    '+91 99887 76655',
-    'rohan.k@iitb.ac.in',
-    'IIT Bombay - Indian Institute of Technology',
-    'Computer Science & Engineering',
-    'Class of 2026',
-    'Hostel 14, Room 302, IIT Bombay, Powai, Mumbai, Maharashtra 400076',
-    'Hostel 14, Room 302, IIT Bombay, Powai, Mumbai, Maharashtra 400076',
-    1,
-    9000,
-    'Prefers Top Memorabilia Deluxe Box with A4 Framed Photo.',
-    '2026-10-03T11:00:00Z'
-  );
-
-  insertOrder.run(
-    'JK-2026-0002',
-    'cust_002',
-    'Rohan Kulkarni',
-    '+91 99887 76655',
-    '+91 99887 76655',
-    'rohan.k@iitb.ac.in',
-    'IIT Bombay - Indian Institute of Technology',
-    'Computer Science & Engineering',
-    'Class of 2026',
-    'Hostel 14, Room 302, IIT Bombay, Powai, Mumbai 400076',
-    'Hostel 14, Room 302, IIT Bombay, Powai, Mumbai 400076',
-    'CSE Farewell 2026',
-    'Farewell',
-    '2026-11-25',
-    '2026-11-18',
-    45,
-    45,
-    'square',
-    'top',
-    200,
-    0,
-    0,
-    0,
-    0,
-    450,
-    9450,
-    9450,
-    0,
-    'paid',
-    'ready_for_dispatch',
-    'ready_for_dispatch',
-    'Square photo mosaic with all 45 seniors. A4 wooden frames included for every student.',
-    'varsity',
-    '2026-10-03T11:15:00Z',
-    now
-  );
-
-  for (let i = 1; i <= 45; i++) {
-    const padded = String(i).padStart(3, '0');
-    insertShirt.run(
-      `JK-2026-0002-${padded}`,
-      'JK-2026-0002',
-      padded,
-      `Student ${padded} (CSE)`,
-      `ROBOT_${i}`,
-      `CS${100 + i}`,
-      i % 2 === 0 ? 'L' : 'M',
-      'White',
-      '100% Cotton 220 GSM Bio-Washed',
-      'Half Sleeve',
-      SAMPLE_AVATARS[i % SAMPLE_AVATARS.length],
-      JSON.stringify([SAMPLE_AVATARS[i % SAMPLE_AVATARS.length]]),
-      'IIT Bombay CSE Batch 2026',
-      null,
-      'Checked and packed.',
-      1,
-      1,
-      0,
-      0,
-      45,
-      1,
-      'completed',
-      '2026-10-03T11:30:00Z'
-    );
-  }
-
-  insertProduction.run(
-    'prod_002',
-    'JK-2026-0002',
-    'usr_production',
-    'Suresh Goud',
-    'standard',
-    'packing_completed',
-    '2026-10-05',
-    '2026-10-12',
-    '2026-10-11',
-    45,
-    0,
-    0,
-    0,
-    'All 45 t-shirts + 45 A4 frames + 45 shades packed into 3 secure cartons. Passed final QC.',
-    JSON.stringify([
-      { task: 'All 45 shirts printed', done: true },
-      { task: 'All 45 frames checked and acrylic peeled', done: true },
-      { task: 'Box packaging and labeling complete', done: true }
-    ]),
-    now
-  );
-
-  insertPayment.run(
-    'pay_002',
-    'JK-2026-0002',
-    9450,
-    '2026-10-03',
-    'Bank Transfer',
-    'NEFT/HDFC/9928374182',
-    'paid',
-    'INV-JK-2026-0002',
-    'Full payment received in advance via NEFT',
-    '2026-10-03T11:20:00Z'
-  );
-
-  insertShipping.run(
-    'ship_002',
-    'JK-2026-0002',
-    'Rohan Kulkarni',
-    'Hostel 14, Room 302, IIT Bombay, Powai, Mumbai 400076',
-    3,
-    45,
-    'Delhivery Express',
-    'DEL991827364IN',
-    '2026-10-13',
-    '2026-10-16',
-    null,
-    'ready_for_dispatch',
-    'Air cargo dispatch scheduled for tomorrow morning.',
-    now
-  );
-
-  // --- ORDER 3: JK-2026-0003 (SRM Chennai Fest, 80 shirts, Design Approval Stage) ---
-  insertCustomer.run(
-    'cust_003',
-    'Kavitha Sundaram',
-    '+91 97112 34567',
-    '+91 97112 34567',
-    'kavitha.fest@srmist.edu.in',
-    'SRM Institute of Science and Technology, Chennai',
-    'Mechanical Engineering - Aero Club',
-    '2024 - 2028',
-    'Aero Club, Mechanical Block, SRM IST, Kattankulathur, Chennai 603203',
-    'Aero Club, Mechanical Block, SRM IST, Kattankulathur, Chennai 603203',
-    1,
-    10400,
-    'Symposium aero-fest batch tees. High priority on college crest.',
-    '2026-10-08T09:00:00Z'
-  );
-
-  insertOrder.run(
-    'JK-2026-0003',
-    'cust_003',
-    'Kavitha Sundaram',
-    '+91 97112 34567',
-    '+91 97112 34567',
-    'kavitha.fest@srmist.edu.in',
-    'SRM Institute of Science and Technology, Chennai',
-    'Mechanical Engineering - Aero Club',
-    '2024 - 2028',
-    'Aero Club, Mechanical Block, SRM IST, Chennai 603203',
-    'Aero Club, Mechanical Block, SRM IST, Chennai 603203',
-    'AERO-FEST 2026',
-    'College Fest',
-    '2026-12-05',
-    '2026-11-28',
-    80,
-    80,
-    'chain',
-    'basic',
-    130,
-    0,
-    0,
-    0,
-    0,
-    520,
-    10920,
-    0,
-    10920,
-    'pending',
-    'customer_approval',
-    'packing_pending',
-    'Interlocking Chain layout with club members. Front logo + Left sleeve sponsor logo.',
-    'bold_minimal',
-    '2026-10-08T09:30:00Z',
-    now
-  );
-
-  for (let i = 1; i <= 20; i++) {
-    const padded = String(i).padStart(3, '0');
-    insertShirt.run(
-      `JK-2026-0003-${padded}`,
-      'JK-2026-0003',
-      padded,
-      `Aero Member ${i}`,
-      `PILOT_${i}`,
-      `AE${200 + i}`,
-      'L',
-      'White',
-      '100% Bio-Washed Cotton (220 GSM)',
-      'Half Sleeve',
-      SAMPLE_AVATARS[i % SAMPLE_AVATARS.length],
-      JSON.stringify([SAMPLE_AVATARS[i % SAMPLE_AVATARS.length]]),
-      'AERO-FEST SRM',
-      null,
-      'Artwork revision 2 uploaded for review.',
-      1,
-      1,
-      1, // Left sleeve sponsor
-      0,
-      80,
-      1,
-      'pending',
-      '2026-10-08T10:00:00Z'
-    );
-  }
-
-  insertProduction.run(
-    'prod_003',
-    'JK-2026-0003',
-    'usr_designer',
-    'Anjali Mehta',
-    'standard',
-    'customer_approval',
-    null,
-    '2026-11-25',
-    null,
-    0,
-    80,
-    0,
-    0,
-    'Customer requested slight repositioning of left sleeve sponsor logo. Revision sent to Kavitha.',
-    JSON.stringify([
-      { task: 'Collect student photos and list', done: true },
-      { task: 'Generate Chain layout mockup', done: true },
-      { task: 'Sponsor logo alignment on left sleeve', done: true },
-      { task: 'Customer formal sign-off', done: false }
-    ]),
-    now
-  );
-
-  // --- ORDER 4: JK-2026-0004 (Loyola College Farewell, 35 shirts, Delivered) ---
-  insertCustomer.run(
-    'cust_004',
-    'Antony Joseph',
-    '+91 94433 22110',
-    '+91 94433 22110',
-    'antony.j@loyola.edu',
-    'Loyola College, Chennai',
-    'B.Com (Honours)',
-    '2023 - 2026',
-    'Commerce Block, Loyola College, Sterling Road, Nungambakkam, Chennai 600034',
-    'Commerce Block, Loyola College, Sterling Road, Nungambakkam, Chennai 600034',
-    1,
-    5512.5,
-    'Delivered successfully with zero defects. Customer left 5-star review.',
-    '2026-09-15T10:00:00Z'
-  );
-
-  insertOrder.run(
-    'JK-2026-0004',
-    'cust_004',
-    'Antony Joseph',
-    '+91 94433 22110',
-    '+91 94433 22110',
-    'antony.j@loyola.edu',
-    'Loyola College, Chennai',
-    'B.Com (Honours)',
-    '2023 - 2026',
-    'Commerce Block, Loyola College, Chennai 600034',
-    'Commerce Block, Loyola College, Chennai 600034',
-    'B.Com Farewell 2026',
-    'Farewell',
-    '2026-10-02',
-    '2026-09-28',
-    35,
-    35,
-    'square',
-    'salina',
-    150,
-    0,
-    0,
-    0,
-    0,
-    262.5,
-    5512.5,
-    5512.5,
-    0,
-    'paid',
-    'delivered',
-    'delivered',
-    'Order complete and delivered in person.',
-    'jersey',
-    '2026-09-15T10:00:00Z',
-    '2026-09-29T16:00:00Z'
-  );
-
-  insertPayment.run(
-    'pay_004',
-    'JK-2026-0004',
-    5512.5,
-    '2026-09-28',
-    'UPI',
-    'UPI/26092898765/ICICI',
-    'paid',
-    'INV-JK-2026-0004',
-    'Full balance settled on delivery',
-    '2026-09-28T14:00:00Z'
-  );
-
-  insertShipping.run(
-    'ship_004',
-    'JK-2026-0004',
-    'Antony Joseph',
-    'Commerce Block, Loyola College, Chennai 600034',
-    1,
-    35,
-    'DTDC Courier',
-    'DTDC99182746',
-    '2026-09-26',
-    '2026-09-28',
-    '2026-09-28',
-    'delivered',
-    'Delivered and signed by Antony Joseph at college reception.',
-    '2026-09-28T16:00:00Z'
-  );
-
-  // 6. Seed Coupons
+  // 5. Seed Coupons (Optional initial discount coupons)
   const insertCoupon = db.prepare(`
-    INSERT INTO coupons (id, code, discount_type, discount_value, min_order_amount, max_discount, start_date, expiry_date, usage_limit, used_count, is_active, created_at)
+    INSERT OR IGNORE INTO coupons (id, code, discount_type, discount_value, min_order_amount, max_discount, start_date, expiry_date, usage_limit, used_count, is_active, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertCoupon.run('cpn_farewell10', 'FAREWELL10', 'percentage', 10, 5000, 1500, '2026-01-01', '2027-12-31', 500, 24, 1, now);
-  insertCoupon.run('cpn_bulk1000', 'BULK1000', 'fixed', 1000, 10000, 1000, '2026-01-01', '2027-12-31', 200, 12, 1, now);
-  insertCoupon.run('cpn_earlybird', 'EARLYBIRD', 'percentage', 15, 6000, 2000, '2026-01-01', '2027-12-31', 100, 8, 1, now);
-
-  // 7. Seed Enquiries
-  const insertEnquiry = db.prepare(`
-    INSERT INTO enquiries (id, customer_name, phone, email, college_name, subject, message, status, follow_up_date, internal_notes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertEnquiry.run(
-    'enq_001',
-    'Sneha G',
-    '+91 98888 11111',
-    'sneha.bitshyd@gmail.com',
-    'BITS Pilani - Hyderabad Campus',
-    'Bulk Quote for 120 T-shirts with individual photo signatures',
-    'Hello JK Empress, we are organizing our 4th year EEE department farewell with 120 students. Can we get custom hoodies or full sleeve t-shirts with our batch collage?',
-    'new',
-    '2026-11-12',
-    'High potential bulk lead. Prepare quote for 120 pcs Salina pack.',
-    now
-  );
-
-  insertEnquiry.run(
-    'enq_002',
-    'Vigneshwaran',
-    '+91 97777 22222',
-    'vignesh.vit@vitstudent.ac.in',
-    'VIT Vellore',
-    'Sample T-shirt print quality check',
-    'Can you send a sample physical printed shirt or fabric swatch to our college address before we place 75 shirts order?',
-    'contacted',
-    '2026-11-11',
-    'Dispatched sample swatch kit via DTDC on 9th Nov.',
-    now
-  );
-
-  // 8. Seed Reviews
-  const insertReview = db.prepare(`
-    INSERT INTO reviews (id, customer_name, college_name, rating, comment, order_id, is_approved, is_published_testimonial, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertReview.run(
-    'rev_001',
-    'Antony Joseph',
-    'Loyola College, Chennai',
-    5,
-    'The print clarity on every single classmate face in the Honeycomb layout was stunning! The fabric markers did not bleed at all on Signature Day. Everyone in our batch cherishes the shirts!',
-    'JK-2026-0004',
-    1,
-    1,
-    now
-  );
-
-  insertReview.run(
-    'rev_002',
-    'Rohan Kulkarni',
-    'IIT Bombay',
-    5,
-    'Super fast turnaround! The personalized wooden photo frame included in the Top Pack was the highlight of our farewell. Highly recommend JK Empress for any college batch.',
-    'JK-2026-0002',
-    1,
-    1,
-    now
-  );
-
-  // 9. Seed Notifications
-  const insertNotif = db.prepare(`
-    INSERT INTO notifications (id, title, message, type, link, is_read, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertNotif.run('notif_001', 'New Order Received', 'Order JK-2026-0003 created by Kavitha Sundaram (80 t-shirts)', 'order', '/admin/orders/JK-2026-0003', 0, now);
-  insertNotif.run('notif_002', 'Order Milestone', '42 of 60 t-shirts processed for Order JK-2026-0001', 'order', '/admin/orders/JK-2026-0001', 0, now);
-  insertNotif.run('notif_003', 'Advance Payment Received', '₹5,000 paid via UPI for Order JK-2026-0001', 'payment', '/admin/finance', 0, now);
-  insertNotif.run('notif_004', 'Design Approved', 'Order JK-2026-0001 artwork approved and ready for printing', 'order', '/admin/orders/JK-2026-0001', 0, now);
-
-  // 10. Seed Activity Logs
-  const insertLog = db.prepare(`
-    INSERT INTO activity_logs (id, user_name, user_role, action, entity_type, entity_id, details, ip_address, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insertLog.run('act_001', 'JK Empress Admin', 'Admin', 'System Initialized', 'system', 'sys_init', 'Database schema created & seed data populated', '127.0.0.1', now);
-  insertLog.run('act_002', 'JK Empress Admin', 'Admin', 'Order Confirmed', 'order', 'JK-2026-0001', 'Confirmed 60 t-shirts order for A K P S College', '127.0.0.1', now);
-  insertLog.run('act_003', 'JK Empress Admin', 'Admin', 'Design Uploaded', 'design', 'des_001_001_front', 'Uploaded front Honeycomb rosette high-res artwork', '127.0.0.1', now);
-  insertLog.run('act_004', 'JK Empress Admin', 'Admin', 'Printing Started', 'production', 'prod_001', 'Started DTG print run for 60 shirts', '127.0.0.1', now);
+  insertCoupon.run('cpn_farewell10', 'FAREWELL10', 'percentage', 10, 5000, 1500, '2026-01-01', '2027-12-31', 500, 0, 1, now);
+  insertCoupon.run('cpn_bulk1000', 'BULK1000', 'fixed', 1000, 10000, 1000, '2026-01-01', '2027-12-31', 200, 0, 1, now);
 }
 
 // -----------------------------------------------------------------------------

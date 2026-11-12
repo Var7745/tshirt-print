@@ -14,11 +14,13 @@ import {
   User,
   Hash,
   CheckCircle2,
-  Share2
+  Share2,
+  Crop
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getBatchById, addMemberToBatch, BatchData, Member, SAMPLE_AVATARS } from '@/lib/store';
 import TshirtMockup from '@/components/TshirtMockup';
+import PhotoFrameAdjuster from '@/components/PhotoFrameAdjuster';
 
 export default function StudentJoinPage() {
   const params = useParams();
@@ -32,14 +34,33 @@ export default function StudentJoinPage() {
   const [size, setSize] = useState<Member['size']>('M');
   const [selectedPhoto, setSelectedPhoto] = useState<string>(SAMPLE_AVATARS[0]);
   const [customPhotoUpload, setCustomPhotoUpload] = useState<string | null>(null);
+  const [rawSelectedImage, setRawSelectedImage] = useState<string | null>(null);
+  const [showAdjusterModal, setShowAdjusterModal] = useState(false);
   const [showSizeGuide, setShowSizeGuide] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   useEffect(() => {
     if (batchId) {
-      const b = getBatchById(batchId);
-      if (b) setBatch(b);
+      // 1. Fetch live batch from API with public view (redacting other students' private photos)
+      fetch(`/api/batches/${batchId}?view=public&_t=${Date.now()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.batch) {
+            setBatch(data.batch);
+          } else {
+            // Fallback to local store
+            const b = getBatchById(batchId);
+            if (b) setBatch(b);
+          }
+        })
+        .catch(() => {
+          const b = getBatchById(batchId);
+          if (b) setBatch(b);
+        });
     }
   }, [batchId]);
 
@@ -103,49 +124,110 @@ export default function StudentJoinPage() {
         return;
       }
 
-      // Safe image verified: proceed to read
+      // Safe image verified: Read as Data URL & open interactive frame adjuster
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
-        setCustomPhotoUpload(result);
-        setSelectedPhoto(result);
+        setRawSelectedImage(result);
+        setShowAdjusterModal(true);
       };
       reader.readAsDataURL(file);
     };
     headerReader.readAsArrayBuffer(slice);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSaveAdjustedPhoto = (adjustedDataUrl: string, blob: Blob) => {
+    setSelectedPhoto(adjustedDataUrl);
+    setCustomPhotoUpload(adjustedDataUrl);
+    setShowAdjusterModal(false);
+
+    // Upload adjusted cropped photo to cloud storage in background
+    setUploadingPhoto(true);
+    const formData = new FormData();
+    formData.append('file', blob, 'portrait.jpg');
+    formData.append('bucket', 'student-photos');
+
+    fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    })
+      .then((r) => r.json())
+      .then((uploadData) => {
+        setUploadingPhoto(false);
+        if (uploadData.success && uploadData.url) {
+          setCustomPhotoUpload(uploadData.url);
+          setSelectedPhoto(uploadData.url);
+        }
+      })
+      .catch((err) => {
+        console.error('Photo upload error:', err);
+        setUploadingPhoto(false);
+      });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
     if (!fullName.trim()) {
-      alert('Please enter your full name');
+      setErrorMessage('Please enter your full name');
+      return;
+    }
+    if (!rollNumber.trim()) {
+      setErrorMessage('Please enter your roll number or student ID');
       return;
     }
 
     setSubmitting(true);
 
     const photoToUse = customPhotoUpload || selectedPhoto || SAMPLE_AVATARS[0];
+    const jName = (jerseyName || fullName.split(' ')[0] || 'CLASSMATE').toUpperCase();
 
-    addMemberToBatch(batchId, {
-      fullName,
-      jerseyName: (jerseyName || fullName.split(' ')[0] || 'CLASSMATE').toUpperCase(),
-      rollNumber: rollNumber || '00',
-      size,
-      photoUrl: photoToUse,
-      status: 'confirmed',
-    });
+    try {
+      // 1. Submit to Live Backend API
+      const res = await fetch(`/api/batches/${batchId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          jerseyName: jName,
+          rollNumber,
+          size,
+          photoUrl: photoToUse,
+        }),
+      });
 
-    // Fire confetti
-    confetti({
-      particleCount: 120,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
+      const data = await res.json();
 
-    setTimeout(() => {
+      if (!res.ok || !data.success) {
+        setSubmitting(false);
+        setErrorMessage(data.error || 'Failed to submit registration. Please try again.');
+        return;
+      }
+
+      // Also sync to client store
+      addMemberToBatch(batchId, {
+        fullName,
+        jerseyName: jName,
+        rollNumber: rollNumber || '00',
+        size,
+        photoUrl: photoToUse,
+        status: 'confirmed',
+      });
+
+      // Fire confetti
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+
       setSubmitting(false);
       setIsSubmitted(true);
-    }, 400);
+    } catch (err: any) {
+      setSubmitting(false);
+      setErrorMessage(err.message || 'Connection error. Please try again.');
+    }
   };
 
   if (!batch) {
@@ -263,6 +345,19 @@ export default function StudentJoinPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {errorMessage && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-semibold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+              {errorMessage}
+            </div>
+          )}
+
+          {uploadingPhoto && (
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+              Uploading photo to secure cloud storage...
+            </div>
+          )}
           
           {/* Section 1: Choose Your Photo */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs space-y-4">
@@ -287,18 +382,44 @@ export default function StudentJoinPage() {
               </label>
             </div>
 
+            {/* Privacy Guarantee Note */}
+            <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-[11px] text-emerald-800">
+              <span className="font-bold">🔒 Private & Secure:</span>
+              <span>Your photo is submitted directly to the batch organizer and print shop. Other students cannot browse or access your uploaded photo.</span>
+            </div>
+
             {/* Custom upload preview if any */}
             {customPhotoUpload && (
-              <div className="flex items-center gap-3 p-3 bg-orange-50/50 rounded-2xl border border-orange-200">
-                <img
-                  src={customPhotoUpload}
-                  alt="Custom upload"
-                  className="w-12 h-12 rounded-xl object-cover border border-orange-300"
-                />
-                <div className="text-xs">
-                  <span className="font-bold text-stone-900 block">Custom Photo Selected ✓</span>
-                  <span className="text-stone-500">Looks great for the mosaic print!</span>
+              <div className="flex items-center justify-between p-3.5 bg-orange-50/70 rounded-2xl border border-orange-200">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={customPhotoUpload}
+                    alt="Custom upload"
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-orange-400 shadow-xs"
+                  />
+                  <div className="text-xs">
+                    <span className="font-extrabold text-stone-900 block flex items-center gap-1.5">
+                      Custom Photo Ready ✓
+                    </span>
+                    <span className="text-stone-500">Framed & centered for mosaic print</span>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (rawSelectedImage) {
+                      setShowAdjusterModal(true);
+                    } else {
+                      setRawSelectedImage(customPhotoUpload);
+                      setShowAdjusterModal(true);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-orange-100 text-[#D9531E] border border-orange-300 font-bold text-xs shadow-2xs transition-all"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  Adjust Frame
+                </button>
               </div>
             )}
 
@@ -418,32 +539,35 @@ export default function StudentJoinPage() {
             {showSizeGuide && (
               <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 text-xs text-stone-700 space-y-2">
                 <div className="font-bold text-stone-900">T-Shirt Size Guide (Inches)</div>
-                <div className="grid grid-cols-6 gap-2 text-center text-[11px]">
+                <div className="grid grid-cols-7 gap-1.5 text-center text-[11px]">
                   <div className="font-bold bg-white p-1 rounded border">Size</div>
                   <div className="font-bold bg-white p-1 rounded border">S</div>
                   <div className="font-bold bg-white p-1 rounded border">M</div>
                   <div className="font-bold bg-white p-1 rounded border">L</div>
                   <div className="font-bold bg-white p-1 rounded border">XL</div>
-                  <div className="font-bold bg-white p-1 rounded border">2XL</div>
+                  <div className="font-bold bg-white p-1 rounded border">XXL</div>
+                  <div className="font-bold bg-white p-1 rounded border">XXXL</div>
                   <div className="font-semibold text-stone-500 py-1">Chest</div>
                   <div className="py-1">38&quot;</div>
                   <div className="py-1">40&quot;</div>
                   <div className="py-1">42&quot;</div>
                   <div className="py-1">44&quot;</div>
                   <div className="py-1">46&quot;</div>
+                  <div className="py-1">48&quot;</div>
                   <div className="font-semibold text-stone-500 py-1">Length</div>
-                  <div className="py-1">26&quot;</div>
                   <div className="py-1">27&quot;</div>
                   <div className="py-1">28&quot;</div>
                   <div className="py-1">29&quot;</div>
                   <div className="py-1">30&quot;</div>
+                  <div className="py-1">31&quot;</div>
+                  <div className="py-1">32&quot;</div>
                 </div>
               </div>
             )}
 
             {/* Size Selector Buttons */}
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {(['XS', 'S', 'M', 'L', 'XL', '2XL'] as Member['size'][]).map((s) => (
+              {(['S', 'M', 'L', 'XL', 'XXL', 'XXXL'] as Member['size'][]).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -495,6 +619,22 @@ export default function StudentJoinPage() {
             )}
           </button>
         </form>
+
+        {/* Interactive Photo Frame Adjuster Modal */}
+        {showAdjusterModal && rawSelectedImage && (
+          <PhotoFrameAdjuster
+            imageSrc={rawSelectedImage}
+            initialShape={
+              batch?.collageShape === 'honeycomb'
+                ? 'honeycomb'
+                : batch?.collageShape === 'chain'
+                ? 'circle'
+                : 'square'
+            }
+            onSave={handleSaveAdjustedPhoto}
+            onCancel={() => setShowAdjusterModal(false)}
+          />
+        )}
 
       </div>
     </div>

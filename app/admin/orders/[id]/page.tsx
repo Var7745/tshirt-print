@@ -526,13 +526,13 @@ export default function OrderDetailsPage({ params }: PageProps) {
             {/* SECTION 4: SIZE BREAKDOWN TABLE */}
             <div className="pt-2 border-t border-slate-100 dark:border-zinc-800">
               <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1.5">Size Breakdown:</div>
-              <div className="grid grid-cols-7 border border-slate-200 dark:border-zinc-700 divide-x divide-slate-200 dark:divide-zinc-700 rounded-lg text-center overflow-hidden font-mono">
-                {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map((s) => (
+              <div className="grid grid-cols-6 border border-slate-200 dark:border-zinc-700 divide-x divide-slate-200 dark:divide-zinc-700 rounded-lg text-center overflow-hidden font-mono">
+                {['S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((s) => (
                   <div key={s} className="bg-slate-100 dark:bg-zinc-800 py-1 text-[10px] font-bold text-zinc-600 dark:text-zinc-400">{s}</div>
                 ))}
-                {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map((s) => (
+                {['S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((s) => (
                   <div key={s} className="py-1 font-bold text-xs bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
-                    {sizeMap[s] || 0}
+                    {sizeMap[s] || (s === 'XXL' ? sizeMap['2XL'] || 0 : s === 'XXXL' ? sizeMap['3XL'] || 0 : 0)}
                   </div>
                 ))}
               </div>
@@ -1105,7 +1105,7 @@ export default function OrderDetailsPage({ params }: PageProps) {
                     onChange={(e) => setNewShirt({ ...newShirt, size: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800"
                   >
-                    {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map((s) => (
+                    {['S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
@@ -1245,7 +1245,7 @@ export default function OrderDetailsPage({ params }: PageProps) {
                     onChange={(e) => setEditShirtModal({ ...editShirtModal, size: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 font-bold"
                   >
-                    {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map((s) => (
+                    {['S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>

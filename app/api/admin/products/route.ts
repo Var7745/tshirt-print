@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       body.category || 'Signature Day',
       Number(body.price || 150),
       body.description || 'Premium Custom Printed Apparel',
-      JSON.stringify(body.sizes || ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL']),
+      JSON.stringify(body.sizes || ['S', 'M', 'L', 'XL', 'XXL', 'XXXL']),
       JSON.stringify(body.colours || ['White', 'Off-White', 'Black', 'Navy Blue']),
       body.fabric || '100% Bio-Washed Cotton (220 GSM)',
       JSON.stringify(['Half Sleeve', 'Full Sleeve']),

@@ -34,6 +34,7 @@ data/backup_*
 data/jkempress.db-shm
 data/jkempress.db-wal
 data/*.backup*
+data/export_for_supabase.json
 
 # typescript
 *.tsbuildinfo

@@ -49,11 +49,16 @@ export async function GET(req: Request) {
       GROUP BY size
       ORDER BY count DESC
     `);
-    const sizeOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+    const sizeOrder = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
     const sizeDistribution: Record<string, number> = {};
     sizeOrder.forEach((s) => (sizeDistribution[s] = 0));
     sizesRows.forEach((r: any) => {
-      if (r.size) sizeDistribution[r.size] = (sizeDistribution[r.size] || 0) + Number(r.count);
+      let s = r.size;
+      if (s === '2XL') s = 'XXL';
+      if (s === '3XL') s = 'XXXL';
+      if (s && sizeDistribution[s] !== undefined) {
+        sizeDistribution[s] = (sizeDistribution[s] || 0) + Number(r.count);
+      }
     });
 
     const categoriesRows = queryAll(`

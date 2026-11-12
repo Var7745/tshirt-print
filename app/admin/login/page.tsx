@@ -21,8 +21,8 @@ import {
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@jkempress.com');
-  const [password, setPassword] = useState('12345678');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,7 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/admin/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: email.trim(), password })
       });
 
       const data = await res.json();
@@ -58,16 +58,10 @@ export default function AdminLoginPage() {
       router.refresh();
       router.push(redirectUrl);
     } catch (err: any) {
-      setError(err.message || 'Invalid email or password');
+      setError(err.message || 'Invalid username or password');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickFill = () => {
-    setEmail('admin@jkempress.com');
-    setPassword('12345678');
-    setError('');
   };
 
   return (
@@ -100,23 +94,6 @@ export default function AdminLoginPage() {
                 Full administrative authority over orders, customers, personalized print graphics, and financial records.
               </p>
             </div>
-
-            {/* Quick Fill Button */}
-            <button
-              type="button"
-              onClick={handleQuickFill}
-              className="w-full p-3 rounded-2xl border border-orange-200 dark:border-orange-900/50 bg-orange-50/80 dark:bg-orange-950/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 text-left transition-all group cursor-pointer"
-            >
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-orange-700 dark:text-orange-300">Quick-Fill Admin Credentials</span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800 text-orange-600">
-                  Click to Fill
-                </span>
-              </div>
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                admin@jkempress.com · pass: 12345678
-              </div>
-            </button>
           </div>
         </div>
 
@@ -126,24 +103,10 @@ export default function AdminLoginPage() {
             <div className="flex items-center justify-between pb-6 border-b border-slate-100 dark:border-zinc-800">
               <div>
                 <h2 className="text-xl font-bold font-heading">Sign In to Dashboard</h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Enter authorized credentials to continue</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Enter authorized administrator credentials</p>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center font-black">
                 JK
-              </div>
-            </div>
-
-            {/* Credentials Callout */}
-            <div className="mt-4 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div>
-                  <span className="font-bold">Admin Credentials:</span>
-                  <span className="ml-1 text-zinc-600 dark:text-zinc-400">admin@jkempress.com</span>
-                </div>
-              </div>
-              <div className="font-mono font-bold bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800 text-orange-600 dark:text-orange-400">
-                12345678
               </div>
             </div>
 
@@ -157,16 +120,16 @@ export default function AdminLoginPage() {
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
-                  Admin Email
+                  Username or Email
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@jkempress.com"
+                    placeholder="e.g. jagan or jagan@jkempress.com"
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 text-sm focus:outline-none focus:border-orange-500 focus:bg-white dark:focus:bg-zinc-800 transition-colors"
                   />
                 </div>

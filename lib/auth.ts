@@ -38,8 +38,8 @@ export function getSessionSecret(): string {
       .run('admin_session_secret', generated, now);
     return generated;
   } catch {
-    // Fallback if db is temporarily locked
-    return 'jkempress_secure_fallback_secret_key_8492048102938475829102';
+    // Ephemeral strong key fallback
+    return 'jkempress_session_key_' + crypto.randomBytes(20).toString('hex');
   }
 }
 
@@ -296,5 +296,70 @@ export function requireAdminAuth(req: Request | NextRequest, requiredRole?: stri
   return {
     authorized: true,
     user: result.user,
+  };
+}
+
+export interface CustomerUserPayload {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  college_name?: string;
+  department?: string;
+  batch?: string;
+  role: 'customer';
+}
+
+export function createCustomerToken(user: CustomerUserPayload, expiresInDays: number = 30): string {
+  const secret = getSessionSecret();
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    ...user,
+    iat: now,
+    exp: now + (expiresInDays * 24 * 60 * 60),
+  };
+
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
+  const data = `${headerB64}.${payloadB64}`;
+
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+
+  return `${data}.${signature}`;
+}
+
+export function getCustomerAuth(req: Request | NextRequest): {
+  authenticated: boolean;
+  user?: CustomerUserPayload;
+  error?: string;
+} {
+  const cookieHeader = req.headers.get('cookie') || '';
+  const tokenMatch = cookieHeader.match(/jkempress_customer_session=([^;]+)/);
+  const bearerHeader = req.headers.get('authorization');
+  let token = tokenMatch ? tokenMatch[1] : null;
+
+  if (!token && bearerHeader && bearerHeader.startsWith('Bearer ')) {
+    token = bearerHeader.substring(7);
+  }
+
+  if (!token) {
+    return { authenticated: false, error: 'No session token' };
+  }
+
+  const verified = verifySessionToken(token);
+  if (!verified.valid || !verified.payload) {
+    return { authenticated: false, error: verified.error || 'Invalid session' };
+  }
+
+  return {
+    authenticated: true,
+    user: verified.payload as unknown as CustomerUserPayload,
   };
 }

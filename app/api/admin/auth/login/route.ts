@@ -30,15 +30,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanIdentifier = String(email || '').toLowerCase().trim();
     const user = queryOne(
-      'SELECT id, email, password_hash, name, role, phone, avatar_url, status FROM admin_users WHERE email = ?',
-      [cleanEmail]
+      'SELECT id, email, password_hash, name, role, phone, avatar_url, status FROM admin_users WHERE LOWER(email) = ? OR LOWER(name) = ? OR LOWER(id) = ?',
+      [cleanIdentifier, cleanIdentifier, cleanIdentifier]
     );
 
     if (!user) {
       return NextResponse.json(
-        { success: false, message: 'Invalid email or password' },
+        { success: false, message: 'Invalid username or password' },
         { status: 401 }
       );
     }

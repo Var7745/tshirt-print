@@ -68,7 +68,13 @@ export default function AdminPrintFilesPage() {
     const s = shirt || selectedTshirt;
     const el = (document.getElementById('print-file-front-svg') || document.querySelector('svg[id*="front-svg"]')) as SVGSVGElement | null;
     if (el && s) {
-      downloadSvgElementAsPng(el, `${s.tshirt_number}_Front_${s.jersey_name || s.person_name || 'PRINT'}`);
+      downloadSvgElementAsPng(el, `${s.tshirt_number}_Front_${s.jersey_name || s.person_name || 'PRINT'}`, {
+        widthInches: 10,
+        heightInches: 12,
+        dpi: 300,
+        transparent: true,
+        includeWatermark: false
+      });
     } else {
       alert('Front artwork element not found. Please select a garment.');
     }
@@ -78,7 +84,13 @@ export default function AdminPrintFilesPage() {
     const s = shirt || selectedTshirt;
     const el = (document.getElementById('print-file-back-svg') || document.querySelector('svg[id*="back-svg"]')) as SVGSVGElement | null;
     if (el && s) {
-      downloadSvgElementAsPng(el, `${s.tshirt_number}_Back_${s.jersey_name || s.person_name || 'PRINT'}`);
+      downloadSvgElementAsPng(el, `${s.tshirt_number}_Back_${s.jersey_name || s.person_name || 'PRINT'}`, {
+        widthInches: 11,
+        heightInches: 14,
+        dpi: 300,
+        transparent: true,
+        includeWatermark: false
+      });
     } else {
       alert('Back print element not found. Please select a garment.');
     }
