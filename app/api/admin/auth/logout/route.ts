@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminSession } from '@/lib/auth';
 import { logActivity } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const session = verifyAdminSession(req);
   if (session.valid && session.user) {

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { queryOne, execute, logActivity, checkRateLimit } from '@/lib/db';
 import { verifyPassword, hashPassword, createSessionToken } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     // 1. IP Rate Limiting (5 attempts per 15 minutes)

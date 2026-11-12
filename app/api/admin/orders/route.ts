@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { queryAll, queryOne, execute, logActivity } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   // 1. Independent Server-Side Authentication
   const auth = requireAdminAuth(req);

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { queryOne, execute, checkRateLimit, logActivity } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     // 1. IP Rate Limiting (10 orders per 10 minutes)

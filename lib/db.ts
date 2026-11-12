@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { hashPassword } from './auth';
@@ -42,10 +42,45 @@ function ensureDbFile() {
 // Singleton database instance
 let _db: DatabaseSync | null = null;
 
+function loadDatabaseConstructor(): any {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sqlite = require('node:sqlite');
+    return sqlite.DatabaseSync || sqlite.Database;
+  } catch (err: any) {
+    try {
+      const g = globalThis as any;
+      const req = typeof g.__non_webpack_require__ !== 'undefined' ? g.__non_webpack_require__ : eval('require');
+      const sqlite = req('node:sqlite');
+      return sqlite.DatabaseSync || sqlite.Database;
+    } catch {
+      return null;
+    }
+  }
+}
+
+// Fallback stub database for build-time static evaluation or unsupported environments
+function createStubDb(): any {
+  const stubStatement = {
+    get: () => null,
+    all: () => [],
+    run: () => ({ changes: 0, lastInsertRowid: 0 }),
+  };
+  return {
+    exec: () => {},
+    prepare: () => stubStatement,
+  };
+}
+
 export function getDb(): DatabaseSync {
   if (!_db) {
     ensureDbFile();
-    _db = new DatabaseSync(DB_FILE);
+    const DBConstructor = loadDatabaseConstructor();
+    if (!DBConstructor) {
+      console.warn('Native node:sqlite is unavailable in current runtime. Using safe stub database.');
+      return createStubDb();
+    }
+    _db = new DBConstructor(DB_FILE);
     // Enable WAL mode for high concurrency
     _db.exec('PRAGMA journal_mode = WAL;');
     _db.exec('PRAGMA foreign_keys = ON;');

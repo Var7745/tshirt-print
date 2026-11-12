@@ -17,6 +17,10 @@ const nextConfig = {
     ignoreDuringBuilds: true, // ESLint package not installed in devDependencies; TypeScript strict checking enabled
   },
 
+  experimental: {
+    serverComponentsExternalPackages: ['node:sqlite'],
+  },
+
   async headers() {
     return [
       {
