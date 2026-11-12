@@ -42,8 +42,8 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
-  role: 'Admin';
-  avatar_url?: string;
+  role: string;
+  avatar_url?: string | null;
   phone?: string;
 }
 
@@ -63,11 +63,11 @@ export const useAdmin = () => {
 };
 
 const DEFAULT_USER: AdminUser = {
-  id: 'usr_superadmin',
-  name: 'JK Empress Admin',
-  email: 'admin@jkempress.com',
-  role: 'Admin',
-  avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  id: 'jagan',
+  name: 'jagan',
+  email: 'jagan@jkempress.com',
+  role: 'Super Admin',
+  avatar_url: undefined,
   phone: '+91 98490 12345'
 };
 
@@ -88,7 +88,16 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Overview Dashboard', href: '/admin', icon: LayoutDashboard },
       { label: 'Order Management', href: '/admin/orders', icon: ShoppingBag, badge: 'Live' },
+      { label: 'Production Kanban', href: '/admin/production', icon: Factory, badge: 'Kanban' },
+      { label: 'Design Proofing', href: '/admin/designs', icon: Palette },
       { label: 'Print Files Center', href: '/admin/print-files', icon: Printer },
+    ]
+  },
+  {
+    title: 'SUPPLY & LOGISTICS',
+    items: [
+      { label: 'Inventory & Blanks', href: '/admin/inventory', icon: Package },
+      { label: 'Shipping & Tracking', href: '/admin/shipping', icon: Truck },
     ]
   },
   {
@@ -96,7 +105,14 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Products & Pricing', href: '/admin/products', icon: Layers },
       { label: 'Customer Directory', href: '/admin/customers', icon: Users },
+      { label: 'Coupons & Discounts', href: '/admin/coupons', icon: TicketPercent },
       { label: 'Finance & Payments', href: '/admin/finance', icon: CreditCard },
+    ]
+  },
+  {
+    title: 'TEAM & SECURITY',
+    items: [
+      { label: 'Staff & Audit Logs', href: '/admin/staff', icon: ShieldCheck },
     ]
   },
   {

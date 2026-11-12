@@ -62,26 +62,39 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* Right CTA */}
-          <div className="hidden md:flex items-center gap-4">
+          {/* Right CTA & Mobile Admin / Hamburger */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Direct Mobile Admin Button - Always Visible on Mobile */}
             <Link
-              href="/create"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#1A1613] hover:bg-[#2C2723] text-white text-sm font-bold shadow-sm transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border border-amber-500/20"
+              href="/admin"
+              className="flex md:hidden items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold text-stone-800 bg-stone-200/90 hover:bg-[#1A1613] hover:text-white transition-all border border-stone-300 shadow-xs"
+              title="JK Empress Admin Dashboard"
             >
-              Start a batch
-              <ArrowRight className="w-4 h-4 text-[#C49746]" />
+              <Shield className="w-3.5 h-3.5 text-[#C49746]" />
+              <span>Admin</span>
             </Link>
-          </div>
 
-          {/* Mobile hamburger */}
-          <div className="flex md:hidden">
-            <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="p-2 rounded-xl text-[#1A1613] hover:bg-[#EFE7DC] transition-colors"
-              aria-label="Toggle navigation"
-            >
-              {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+            {/* Desktop Start a batch */}
+            <div className="hidden md:flex items-center gap-4">
+              <Link
+                href="/create"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#1A1613] hover:bg-[#2C2723] text-white text-sm font-bold shadow-sm transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border border-amber-500/20"
+              >
+                Start a batch
+                <ArrowRight className="w-4 h-4 text-[#C49746]" />
+              </Link>
+            </div>
+
+            {/* Mobile hamburger */}
+            <div className="flex md:hidden">
+              <button
+                onClick={() => setMobileOpen(!mobileOpen)}
+                className="p-2 rounded-xl text-[#1A1613] hover:bg-[#EFE7DC] transition-colors"
+                aria-label="Toggle navigation"
+              >
+                {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -89,6 +102,21 @@ export default function Navbar() {
       {/* Mobile Drawer */}
       {mobileOpen && (
         <div className="md:hidden bg-[#FAF7F2] border-b border-[#EBE4D8] px-4 pt-2 pb-6 space-y-3">
+          {/* Prominent Admin Portal inside Mobile Drawer */}
+          <Link
+            href="/admin"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center justify-between px-3.5 py-2.5 text-sm font-bold text-[#1A1613] bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-xl transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-[#C49746]" />
+              <span>Admin Dashboard</span>
+            </div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider bg-[#1A1613] text-white px-2 py-0.5 rounded-full">
+              Portal
+            </span>
+          </Link>
+
           <Link
             href="/#pricing"
             onClick={() => setMobileOpen(false)}

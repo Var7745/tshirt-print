@@ -21,14 +21,21 @@ import {
   Square as SquareIcon,
   RectangleHorizontal,
   Diamond,
-  Camera
+  Camera,
+  User,
+  Lock,
+  ShieldCheck,
+  X,
+  Loader2,
+  AlertCircle,
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 import TshirtMockup from '@/components/TshirtMockup';
 import CollagePattern, { CollageShapeType } from '@/components/CollagePattern';
 import { saveBatch, BatchData } from '@/lib/store';
 
 const POPULAR_COLLEGES = [
-  'A K P S GOVT JR College - O4380, West Godavari',
   'IIT Bombay - Indian Institute of Technology',
   'IIT Delhi - Indian Institute of Technology',
   'BITS Pilani - Hyderabad Campus',
@@ -42,13 +49,23 @@ const POPULAR_COLLEGES = [
   'St. Xavier\'s College, Mumbai',
 ];
 
+interface CustomerUser {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  college_name?: string;
+  department?: string;
+  batch?: string;
+}
+
 function CreateBatchForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // Step 1: Batch Info
-  const [collegeName, setCollegeName] = useState('A K P S GOVT JR College - O4380, West Godavari');
-  const [courseSection, setCourseSection] = useState('ECE-B');
+  const [collegeName, setCollegeName] = useState('');
+  const [courseSection, setCourseSection] = useState('');
   const [graduatingYear, setGraduatingYear] = useState(2027);
   const [durationYears, setDurationYears] = useState(4);
   const startYear = graduatingYear - durationYears;
@@ -73,11 +90,44 @@ function CreateBatchForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewMode, setPreviewMode] = useState<'both' | 'card'>('both');
 
+  // Customer Coordinator Authentication State
+  const [currentUser, setCurrentUser] = useState<CustomerUser | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authTab, setAuthTab] = useState<'signup' | 'login'>('signup');
+  const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Check if coordinator is already logged in
+  useEffect(() => {
+    fetch('/api/auth/customer')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.user) {
+          setCurrentUser(data.user);
+          if (data.user.email && !email) setEmail(data.user.email);
+          if (data.user.phone && !phone) setPhone(data.user.phone);
+          if (data.user.name && !authName) setAuthName(data.user.name);
+          if (data.user.email && !authEmail) setAuthEmail(data.user.email);
+          if (data.user.phone && !authPhone) setAuthPhone(data.user.phone);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsCheckingAuth(false));
+  }, []);
+
   // Price Calculation
   const basePackPrice = pack === 'top' ? 200 : pack === 'salina' ? 150 : 130;
   const perPersonPrice = isExpress ? Math.round(basePackPrice * 1.2) : basePackPrice;
   const totalEstimated = perPersonPrice * peopleCount;
 
+  // Intercept submit: if user is not logged in, trigger Sign Up / Log In Popup
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!collegeName.trim() || !courseSection.trim()) {
@@ -85,6 +135,71 @@ function CreateBatchForm() {
       return;
     }
 
+    if (!currentUser) {
+      // Pre-fill modal fields from form if available
+      if (email && !authEmail) setAuthEmail(email);
+      if (phone && !authPhone) setAuthPhone(phone);
+      if (email && !authName) setAuthName(email.split('@')[0]);
+      setAuthError(null);
+      setShowAuthModal(true);
+      return;
+    }
+
+    executeBatchCreation(currentUser);
+  };
+
+  // Handle coordinator login or sign up in modal
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      const payload = authTab === 'signup'
+        ? {
+            action: 'signup',
+            name: authName.trim(),
+            phone: authPhone.trim(),
+            email: authEmail.trim(),
+            password: authPassword,
+            college_name: collegeName,
+            department: courseSection,
+            batch: `Class of ${graduatingYear}`
+          }
+        : {
+            action: 'login',
+            identifier: loginIdentifier.trim(),
+            password: loginPassword
+          };
+
+      const res = await fetch('/api/auth/customer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setAuthError(data.error || 'Authentication failed. Please check your credentials.');
+        setAuthLoading(false);
+        return;
+      }
+
+      const authenticatedUser = data.user;
+      setCurrentUser(authenticatedUser);
+      setShowAuthModal(false);
+      setAuthLoading(false);
+
+      // Successfully saved user to database -> proceed to create and link batch
+      executeBatchCreation(authenticatedUser);
+    } catch (err: any) {
+      setAuthError(err.message || 'Network error occurred. Please try again.');
+      setAuthLoading(false);
+    }
+  };
+
+  // Execute batch creation linked to coordinator account
+  const executeBatchCreation = async (user: CustomerUser) => {
     setIsSubmitting(true);
 
     const batchId = 'b' + Math.random().toString(36).substring(2, 10) + '-' + Math.random().toString(36).substring(2, 6);
@@ -104,16 +219,22 @@ function CreateBatchForm() {
       'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
     ];
 
-    const initialMembers = Array.from({ length: peopleCount }).map((_, i) => ({
-      id: `m_${i + 1}`,
-      fullName: i === 0 ? (email ? email.split('@')[0] : 'Batch Coordinator') : `Classmate ${i + 1}`,
-      jerseyName: i === 0 ? (email ? email.split('@')[0].toUpperCase() : 'LEAD') : `MEMBER ${i + 1}`,
-      rollNumber: String(i + 1).padStart(2, '0'),
-      size: (i % 3 === 0 ? 'L' : i % 2 === 0 ? 'S' : 'M') as 'XS' | 'S' | 'M' | 'L' | 'XL' | '2XL' | '3XL',
-      photoUrl: sampleAvatars[i % sampleAvatars.length],
-      joinedAt: 'Just now',
-      status: 'confirmed' as const,
-    }));
+    const organizerEmail = user.email || email || 'organizer@batch.edu';
+    const organizerPhone = user.phone || phone || '+91 98765 00000';
+    const organizerName = user.name || (organizerEmail.split('@')[0]) || 'Batch Coordinator';
+
+    const initialMembers = [
+      {
+        id: 'm_1',
+        fullName: organizerName,
+        jerseyName: organizerName.slice(0, 10).toUpperCase(),
+        rollNumber: '01',
+        size: 'L' as const,
+        photoUrl: '',
+        joinedAt: 'Organizer',
+        status: 'confirmed' as const,
+      }
+    ];
 
     const newBatch: BatchData = {
       id: batchId,
@@ -122,8 +243,8 @@ function CreateBatchForm() {
       graduatingYear,
       durationYears,
       startYear,
-      email: email || 'organizer@batch.edu',
-      phone: phone || '+91 98765 00000',
+      email: organizerEmail,
+      phone: organizerPhone,
       pack,
       packPrice: perPersonPrice,
       isExpress,
@@ -139,34 +260,39 @@ function CreateBatchForm() {
 
     saveBatch(newBatch);
 
-    // Sync to SQLite Database in background via secured public order submission endpoint
-    fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_name: email ? email.split('@')[0] : 'Batch Coordinator',
-        phone: phone || '+91 98765 00000',
-        email: email || undefined,
-        college_name: collegeName,
-        department: courseSection,
-        batch: `Class of ${graduatingYear}`,
-        event_name: `${courseSection} Graduation Batch`,
-        event_category: 'Batch T-Shirts',
-        participants_count: peopleCount,
-        tshirts_count: peopleCount,
-        price_per_tshirt: perPersonPrice,
-        advance_amount: Math.round(totalEstimated * 0.5),
-        collage_shape: collageShape,
-        back_template: backTemplate,
-        pack_name: pack,
-        production_status: 'photos_uploading',
-        batch_id: batchId
-      })
-    }).catch((err) => console.error('Silent sync to db error', err));
+    // Sync to SQLite Database & link batch to this customer
+    try {
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: user.id,
+          customer_name: organizerName,
+          phone: organizerPhone,
+          email: organizerEmail,
+          college_name: collegeName,
+          department: courseSection,
+          batch: `Class of ${graduatingYear}`,
+          event_name: `${courseSection} Graduation Batch`,
+          event_category: 'Batch T-Shirts',
+          participants_count: peopleCount,
+          tshirts_count: peopleCount,
+          price_per_tshirt: perPersonPrice,
+          advance_amount: Math.round(totalEstimated * 0.5),
+          collage_shape: collageShape,
+          back_template: backTemplate,
+          pack_name: pack,
+          production_status: 'photos_uploading',
+          batch_id: batchId
+        })
+      });
+    } catch (err) {
+      console.error('Order database sync error', err);
+    }
 
     setTimeout(() => {
       router.push(`/dashboard/${batchId}`);
-    }, 600);
+    }, 400);
   };
 
   return (
@@ -334,13 +460,63 @@ function CreateBatchForm() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-stone-900">
-                      Contact
+                      Coordinator Account & Contact
                     </h2>
                     <p className="text-xs sm:text-sm text-stone-500">
-                      Use this email and phone number to retrieve your batch anytime and track its progress.
+                      The batch organizer account receives student photo uploads, manages orders, and accesses the creator dashboard.
                     </p>
                   </div>
                 </div>
+
+                {/* Coordinator Authentication Status */}
+                {currentUser ? (
+                  <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center text-xs shadow-xs">
+                        {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'C'}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                          <span>Signed in as {currentUser.name}</span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                            Verified Coordinator
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-emerald-700">
+                          {currentUser.email} • {currentUser.phone}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await fetch('/api/auth/customer', { method: 'DELETE' });
+                        setCurrentUser(null);
+                      }}
+                      className="text-xs text-stone-500 hover:text-stone-800 underline font-medium"
+                    >
+                      Sign out / Switch
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-amber-900 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-[#D9531E] shrink-0" />
+                      <span>Creating a batch links to a Coordinator Account to protect student uploads and save batch details.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthTab('login');
+                        setAuthError(null);
+                        setShowAuthModal(true);
+                      }}
+                      className="text-xs text-[#D9531E] hover:underline font-bold shrink-0 ml-2"
+                    >
+                      Log in now
+                    </button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -814,6 +990,11 @@ function CreateBatchForm() {
                 >
                   {isSubmitting ? (
                     'Generating batch link...'
+                  ) : currentUser ? (
+                    <>
+                      Create Batch & Get Invite Link
+                      <ArrowRight className="w-4 h-4 text-[#D9531E] group-hover:translate-x-1 transition-transform" />
+                    </>
                   ) : (
                     <>
                       Create Batch & Get Invite Link
@@ -827,6 +1008,262 @@ function CreateBatchForm() {
 
           </div>
         </form>
+
+        {/* Coordinator Authentication / Sign Up / Log In Popup Modal */}
+        {showAuthModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-stone-200 relative max-h-[92vh] overflow-y-auto">
+              
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!authLoading) setShowAuthModal(false);
+                }}
+                disabled={authLoading}
+                className="absolute top-5 right-5 p-2 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Header Badge */}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-orange-100 text-[#D9531E] border border-orange-200">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Coordinator Account Required
+                </span>
+              </div>
+
+              <h3 className="text-2xl font-black text-stone-900 tracking-tight">
+                {authTab === 'signup' ? 'Save Batch & Create Account' : 'Log In & Save Batch'}
+              </h3>
+              <p className="text-xs sm:text-sm text-stone-500 mt-1 mb-5">
+                {authTab === 'signup'
+                  ? 'Sign up to link this batch to your coordinator profile. You will receive private access to all student photos and manage orders in real time.'
+                  : 'Log in to link this new batch to your existing coordinator account.'}
+              </p>
+
+              {/* Batch Summary Highlight Card */}
+              <div className="p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#EBE4D8] mb-6 flex flex-col gap-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-stone-900 truncate max-w-[280px]">
+                    🎓 {collegeName}
+                  </span>
+                  <span className="text-[#D9531E] font-bold">
+                    {pack.toUpperCase()} Pack (₹{perPersonPrice}/pc)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-stone-600">
+                  <span>📚 {courseSection} • Class of {graduatingYear}</span>
+                  <span className="font-mono font-bold text-stone-800">{peopleCount} Students</span>
+                </div>
+              </div>
+
+              {/* Tabs: Sign Up vs Log In */}
+              <div className="grid grid-cols-2 p-1 bg-stone-100 rounded-2xl mb-5 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab('signup');
+                    setAuthError(null);
+                  }}
+                  className={`py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                    authTab === 'signup'
+                      ? 'bg-white text-stone-900 shadow-xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  New Coordinator (Sign Up)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab('login');
+                    setAuthError(null);
+                  }}
+                  className={`py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                    authTab === 'login'
+                      ? 'bg-white text-stone-900 shadow-xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  Already Have Account (Log In)
+                </button>
+              </div>
+
+              {/* Error Alert */}
+              {authError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium mb-4 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span>{authError}</span>
+                    {authError.toLowerCase().includes('already exists') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthTab('login');
+                          setLoginIdentifier(authEmail || authPhone);
+                          setAuthError(null);
+                        }}
+                        className="block font-bold underline mt-1 text-red-800"
+                      >
+                        Click here to switch to Log In →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                {authTab === 'signup' ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        Coordinator Full Name <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <User className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="text"
+                          required
+                          value={authName}
+                          onChange={(e) => setAuthName(e.target.value)}
+                          placeholder="e.g. Rahul Sharma"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        WhatsApp / Mobile Number <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="tel"
+                          required
+                          value={authPhone}
+                          onChange={(e) => setAuthPhone(e.target.value)}
+                          placeholder="e.g. +91 98765 43210"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        Email Address <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="email"
+                          required
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          placeholder="e.g. rahul@college.edu or gmail"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        Create Password <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          placeholder="Minimum 6 characters"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-stone-500 space-y-1 bg-stone-50 p-3 rounded-xl border border-stone-100">
+                      <div className="flex items-center gap-1.5 text-stone-700 font-medium">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        Account saved directly to database with high-security hashing
+                      </div>
+                      <div className="flex items-center gap-1.5 text-stone-700 font-medium">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        Batch details ({courseSection}, {collegeName}) linked to you
+                      </div>
+                      <div className="flex items-center gap-1.5 text-stone-700 font-medium">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        Only you can download photos uploaded using your invite link
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        Email or WhatsApp Number <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="text"
+                          required
+                          value={loginIdentifier}
+                          onChange={(e) => setLoginIdentifier(e.target.value)}
+                          placeholder="Enter registered email or phone"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        Password <span className="text-[#D9531E]">*</span>
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                        <input
+                          type="password"
+                          required
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          placeholder="Enter your password"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-stone-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9531E]/40"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3.5 rounded-2xl bg-[#D9531E] hover:bg-[#B84214] text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-2"
+                >
+                  {authLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{authTab === 'signup' ? 'Saving Account & Batch...' : 'Logging in & Launching...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{authTab === 'signup' ? 'Save Batch & Get Invite Link' : 'Log In & Save Batch'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

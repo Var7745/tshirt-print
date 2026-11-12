@@ -208,11 +208,11 @@ export default function AdminDashboardPage() {
               <h3 className="font-heading font-bold text-sm">Popular T-Shirt Sizes</h3>
               <p className="text-xs text-zinc-400">Distribution across all individual shirts</p>
             </div>
-            <span className="text-xs font-bold text-orange-600">XS – 3XL</span>
+            <span className="text-xs font-bold text-orange-600">S – XXXL</span>
           </div>
 
           <div className="space-y-2.5 pt-2">
-            {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map((size) => {
+            {['S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((size) => {
               const count = sizeDistribution[size] || 0;
               const maxCount = Math.max(...Object.values(sizeDistribution).map(v => Number(v)), 1);
               const pct = Math.round((count / maxCount) * 100);
